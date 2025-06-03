@@ -258,13 +258,14 @@ if __name__ == "__main__":
 
     # Initialize with continuous=True to use our custom action mapping
     render_mode = "human" if args.render else "rgb_array"
-    env = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
+    env = gym.make("CarRacing-v3", render_mode=render_mode, continuous=True)
 
     # Wrap the environment with our custom discrete actions
     env = DiscreteActionWrapper(env, CUSTOM_ACTIONS)
 
     # Record video every 5 episodes
-    env = gym.wrappers.RecordVideo(env, video_folder="videos/", episode_trigger=lambda ep: ep % 5 == 0)
+    if render_mode != "human":
+        env = gym.wrappers.RecordVideo(env, video_folder="videos/", episode_trigger=lambda ep: ep % 5 == 0)
 
     # Preprocessing
     image_size = 84
@@ -293,11 +294,11 @@ if __name__ == "__main__":
 
             # For test mode, set epsilon to 0 for deterministic policy
             if args.mode == 'test':
-                agent.epsilon = 0.0
-                agent.epsilon_min = 0.0
+                agent.epsilon = 0.01
+                agent.epsilon_min = 0.01
 
                 # Reduce number of episodes for testing
-                agent.episodes = 3
+                agent.episodes = 30
         except FileNotFoundError as e:
             print(f"Error: {e}")
             if args.mode == 'test':
