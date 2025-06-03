@@ -8,7 +8,31 @@ import torch.optim as optim
 from collections import deque
 from gymnasium.wrappers import FrameStackObservation, ResizeObservation, GrayscaleObservation, NormalizeObservation
 import matplotlib.pyplot as plt
+import os
+import datetime
+from glob import glob
 
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Define the custom discrete actions
+# (Steering Wheel, Gas, Break)
+CUSTOM_ACTIONS = [
+    (-1, 1, 0.2), (0, 1, 0.2), (1, 1, 0.2),  # Steer, Full Gas, Light Brake
+    (-1, 1,   0), (0, 1,   0), (1, 1,   0),  # Steer, Full Gas, No Brake  (Action 4 is (0,1,0) - straight, gas)
+    (-1, 0, 0.2), (0, 0, 0.2), (1, 0, 0.2),  # Steer, No Gas, Light Brake
+    (-1, 0,   0), (0, 0,   0), (1, 0,   0)   # Steer, No Gas, No Brake
+]
+
+class DiscreteActionWrapper(gym.ActionWrapper):
+    def __init__(self, env, discrete_actions):
+        super().__init__(env)
+        self.discrete_actions = discrete_actions
+        self.action_space = gym.spaces.Discrete(len(discrete_actions))
+
+    def action(self, act):
+        # Convert the tuple to a NumPy array with float32 dtype
+        return np.array(self.discrete_actions[act], dtype=np.float32)
 
 class CNN(nn.Module):    #tej sieci troche nie czaje
     def __init__(self, state_dim, action_dim, activation=F.relu):
@@ -39,7 +63,10 @@ class DQNAgent:
         self.batch_size = 64 #liczba doswiadczen do aktualizacji sieci
         self.target_update_freq = 1000 #co ile krokow aktualizowac siec docelowa
         self.memory_size = 10000 # rozmiar pamieci (liczba doswiadczen do przechowywania)
-        self.episodes = 10 #ilosc epizodow (prob jazdy)
+        self.episodes = 1000 #ilosc epizodow (prob jazdy)
+        self.gas_reward_bonus = 0.1 # Dodatkowa nagroda za gazowanie
+        self.no_positive_reward_patience = 100 # Max consecutive steps without positive reward before truncating
+        self.name = "dqn_agent" # Agent name for saving models
 
         self.n_actions = env.action_space.n #liczba mozliwych akcji do wykonaniwa (przyspiesz,hamuj, lewo, prawo, nic)
         self.n_observation = frame_stack_size #liczba obserwacji (4 klatki obrazu)
@@ -70,6 +97,32 @@ class DQNAgent:
         dones = torch.FloatTensor(dones).to(device)
         return states, actions, rewards, next_states, dones
 
+    def save(self, save_path):
+        """Save the model to the specified path"""
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        # Save model state
+        torch.save({
+            'policy_net_state_dict': self.policy_net.state_dict(),
+            'target_net_state_dict': self.target_net.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'epsilon': self.epsilon
+        }, save_path)
+        print(f"Model saved to {save_path}")
+
+    def load(self, load_path):
+        """Load the model from the specified path"""
+        if not os.path.exists(load_path):
+            raise FileNotFoundError(f"No model found at {load_path}")
+
+        checkpoint = torch.load(load_path)
+        self.policy_net.load_state_dict(checkpoint['policy_net_state_dict'])
+        self.target_net.load_state_dict(checkpoint['target_net_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.epsilon = checkpoint['epsilon']
+        print(f"Model loaded from {load_path}")
+
     def learn(self):
         if len(self.memory) < self.batch_size:
             return
@@ -90,22 +143,55 @@ class DQNAgent:
         self.optimizer.step()  #aktualizacja wag sieci
 
 
-    def train(self):
+    def train(self, save_path=None):
         rewards_per_episode = []
         steps_done = 0
 
+        # With CUSTOM_ACTIONS, action (0, 1, 0) is index 4. This is (Steer=0, Gas=1, Brake=0)
+        gas_action_index = 4 # Corresponds to CUSTOM_ACTIONS[4] == (0, 1, 0)
+
+        # Setup saving path if not provided
+        if save_path is None:
+            # Create a timestamp for this run
+            date = 'run-{date:%Y-%m-%d_%H:%M:%S}'.format(date=datetime.datetime.now()).replace(':', '-')
+            # Create directory structure: saved_models/env_name/agent_name/timestamp
+            save_path_dir = os.path.join('saved_models', 'car_racing', self.name, date)
+            save_path = os.path.join(save_path_dir, 'model.pt')
+
         for episode in range(self.episodes):
-            state,_ = env.reset(options={"randomize": False})
+            state,_ = env.reset(seed=1, options={"randomize": False}) # Set seed for consistent map
             episode_reward = 0
             skip_learn = 4 #co ile krokow uczymy model
             done = False
+            truncated = False # Initialize truncated flag
+            consecutive_no_positive_reward = 0 # Counter for steps without positive reward
 
             while not done:
                 state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device) #konwersja stanu do tensora
                 action = self.select_action(state_tensor)#wybor akcji
 
-                next_state, reward, terminated, truncated, _ = env.step(action)#wykonanie akcji
-                done = terminated or truncated
+                next_state, reward, terminated, truncated_env, _ = env.step(action)#wykonanie akcji
+                # truncated_env is the truncation signal from the environment (e.g. time limit)
+                # We use our own `truncated` for early stopping logic.
+
+                # Add bonus reward for using gas
+                if action == gas_action_index: # Assuming action 3 is 'gas'
+                    reward += self.gas_reward_bonus
+
+                # Check for positive reward
+                if reward > 0:
+                    consecutive_no_positive_reward = 0
+                else:
+                    consecutive_no_positive_reward += 1
+
+                # Original done condition from environment
+                done = terminated or truncated_env
+
+                # Early stopping condition
+                if consecutive_no_positive_reward >= self.no_positive_reward_patience:
+                    print(f"Episode {episode + 1} truncated early after {consecutive_no_positive_reward} steps without positive reward.")
+                    truncated = True # Set our custom truncation flag
+                    done = True # End the episode
 
                 self.store_transition(state, action, reward, next_state, done) #zapisanie doswiadczenia do pamieci
 
@@ -125,6 +211,10 @@ class DQNAgent:
             rewards_per_episode.append(episode_reward)
             print(f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {self.epsilon:.3f}")
 
+            # Save model after each episode
+            if save_path:
+                self.save(save_path)
+
         env.close()
 
         plt.plot(rewards_per_episode)
@@ -134,19 +224,90 @@ class DQNAgent:
         plt.show()
 
 
+def get_prev_run_model(base_dir):
+    """Get the model from the latest run"""
+    # Check if the directory exists
+    if not os.path.exists(os.path.dirname(base_dir)):
+        os.makedirs(os.path.dirname(base_dir), exist_ok=True)
+
+    # Get all directories in the base directory
+    dirs = glob(os.path.dirname(base_dir) + '\\*')
+    dirs.sort(reverse=True)  # Sort by timestamp (newest first)
+
+    if len(dirs) == 0:
+        raise FileNotFoundError("No previous runs found. Run in 'train' mode first.")
+
+    # Return the model path from the latest run
+    return os.path.join(dirs[0], 'model.pt')
+
 if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(device)
-    env = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=False)
-    env = gym.wrappers.RecordVideo(env, video_folder="videos/", episode_trigger=lambda ep: ep % 5 == 0) #co ile epizodow nagrac film
+    import argparse
 
-    #preprocessing
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train or test a DQN agent for Car Racing')
+    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test'],
+                        help='Mode: train or test')
+    parser.add_argument('--render', action='store_true', default=True,
+                        help='Render the environment')
+    parser.add_argument('--load_model', action='store_true', default=False,
+                        help='Load model from previous run for training or testing')
+    args = parser.parse_args()
+
+    # Print device info
+    print(f"Using device: {device}")
+
+    # Initialize with continuous=True to use our custom action mapping
+    render_mode = "human" if args.render else "rgb_array"
+    env = gym.make("CarRacing-v3", render_mode="rgb_array", continuous=True)
+
+    # Wrap the environment with our custom discrete actions
+    env = DiscreteActionWrapper(env, CUSTOM_ACTIONS)
+
+    # Record video every 5 episodes
+    env = gym.wrappers.RecordVideo(env, video_folder="videos/", episode_trigger=lambda ep: ep % 5 == 0)
+
+    # Preprocessing
     image_size = 84
-    frame_stack_size = 4 # do stworzenia obserwacji jako 4 ostatnie klatki, aby moc porownywac ruch pojazdu
-    env = ResizeObservation(env, (image_size, image_size)) #zmiana rozmiaru obserwacji do 96x96
-    env = GrayscaleObservation(env) # zamiana obserwacji na skale szarości
-    env = NormalizeObservation(env)  # normalizacja obserwacji
-    env = FrameStackObservation(env, frame_stack_size)  #stworzenie obserwacji jako 4 ostatnie klatki
+    frame_stack_size = 4
+    env = ResizeObservation(env, (image_size, image_size))
+    env = GrayscaleObservation(env)
+    env = NormalizeObservation(env)
+    env = FrameStackObservation(env, frame_stack_size)
 
+    # Create agent
     agent = DQNAgent(env, image_size, frame_stack_size)
-    agent.train()
+
+    # Setup saving path
+    date = 'run-{date:%Y-%m-%d_%H:%M:%S}'.format(date=datetime.datetime.now()).replace(':', '-')
+    save_path_dir = os.path.join('saved_models', 'car_racing', agent.name, date)
+    save_path = os.path.join(save_path_dir, 'model.pt')
+
+    # Load model if requested or in test mode
+    if args.load_model or args.mode == 'test':
+        try:
+            # Load the model from the latest run
+            model_path = get_prev_run_model(save_path_dir)
+            print(f"Loading model from latest run for {args.mode}.")
+            print(f"\tLoading agent state from {model_path}")
+            agent.load(model_path)
+
+            # For test mode, set epsilon to 0 for deterministic policy
+            if args.mode == 'test':
+                agent.epsilon = 0.0
+                agent.epsilon_min = 0.0
+
+                # Reduce number of episodes for testing
+                agent.episodes = 3
+        except FileNotFoundError as e:
+            print(f"Error: {e}")
+            if args.mode == 'test':
+                # Exit only if in test mode, for train mode we can continue with a new model
+                exit(1)
+            else:
+                print("Starting training with a new model.")
+
+    print(f"Env name: {env.__class__.__name__}")
+    print(f"Mode: {args.mode}")
+
+    # Train or test the agent
+    agent.train(save_path if args.mode == 'train' else None)
