@@ -89,7 +89,8 @@ class DQNAgent:
     def store_transition(self, state, action, reward, next_state, done):
         self.memory.append((np.array(state), action, reward, np.array(next_state), done))
 
-    def numpy_to_tensor(self, states, actions, rewards, next_states, dones):
+    def numpy_to_tensor(self, batch):
+        states, actions, rewards, next_states, dones = zip(*batch)# element to transition(state, action, reward, next_state, done)
         states = torch.FloatTensor(np.array(states)).to(device)
         actions = torch.LongTensor(actions).unsqueeze(1).to(device)
         rewards = torch.FloatTensor(rewards).to(device)
@@ -128,8 +129,7 @@ class DQNAgent:
             return
 
         batch = random.sample(self.memory, self.batch_size) #losujemy mini-batch z pamieci
-        states, actions, rewards, next_states, dones = zip(*batch)# element to transition(state, action, reward, next_state, done)
-        states, actions, rewards, next_states, dones = self.numpy_to_tensor(states, actions, rewards, next_states, dones) #konwersja transition do tensora
+        states, actions, rewards, next_states, dones = self.numpy_to_tensor(batch) #konwersja transition do tensora
 
         q_values = self.policy_net(states).gather(1, actions) #przepuszczenie stanu przez siec uczaca i pobranie wartosci Q dla akcji podanej w batchu
 
@@ -179,7 +179,7 @@ class DQNAgent:
                     reward += self.gas_reward_bonus
 
                 # Check for positive reward
-                if reward > 0:
+                if float(reward) > 0:
                     consecutive_no_positive_reward = 0
                 else:
                     consecutive_no_positive_reward += 1
