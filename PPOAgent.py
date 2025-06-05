@@ -52,7 +52,7 @@ class PPOAgent:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.episodes = 1000
 
-        self.n_actions = 4
+        self.n_actions = env.action_space.n
         self.n_observation = frame_stack_size
         self.policy = ActorCritic(self.n_observation, self.n_actions).to(self.device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=self.lr)
