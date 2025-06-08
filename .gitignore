@@ -40,3 +40,5 @@ desktop.ini
 *.gif
 frames/
 checkpoints/
+videos/
+saved_models/

@@ -98,30 +98,37 @@ class DQNAgent:
         dones = torch.FloatTensor(dones).to(device)
         return states, actions, rewards, next_states, dones
 
-    def save(self, save_path):
+    def save(self, save_path, extra_data=None):
         """Save the model to the specified path"""
-        # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
-        # Save model state
-        torch.save({
+        save_dict = {
             'policy_net_state_dict': self.policy_net.state_dict(),
             'target_net_state_dict': self.target_net.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'epsilon': self.epsilon
-        }, save_path)
+            'epsilon': self.epsilon,
+            'epsilon_min': self.epsilon_min,
+            'epsilon_decay': self.epsilon_decay,
+            'rewards_per_episode': getattr(self, 'rewards_per_episode', []),
+            # 'memory': list(self.memory),  # Uncomment if you want to save replay buffer (can be large!)
+        }
+        if extra_data:
+            save_dict.update(extra_data)
+        torch.save(save_dict, save_path)
         print(f"Model saved to {save_path}")
 
     def load(self, load_path):
         """Load the model from the specified path"""
         if not os.path.exists(load_path):
             raise FileNotFoundError(f"No model found at {load_path}")
-
-        checkpoint = torch.load(load_path)
+        checkpoint = torch.load(load_path, map_location=device)
         self.policy_net.load_state_dict(checkpoint['policy_net_state_dict'])
         self.target_net.load_state_dict(checkpoint['target_net_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.epsilon = checkpoint['epsilon']
+        self.epsilon = checkpoint.get('epsilon', 1.0)
+        self.epsilon_min = checkpoint.get('epsilon_min', 0.01)
+        self.epsilon_decay = checkpoint.get('epsilon_decay', 0.01)
+        self.rewards_per_episode = checkpoint.get('rewards_per_episode', [])
+        # if 'memory' in checkpoint: self.memory = deque(checkpoint['memory'], maxlen=self.memory_size)
         print(f"Model loaded from {load_path}")
 
     def learn(self):
@@ -145,6 +152,7 @@ class DQNAgent:
 
     def train(self, save_path=None):
         rewards_per_episode = []
+        best_reward = float('-inf')
         steps_done = 0
 
         # With CUSTOM_ACTIONS, action (0, 1, 0) is index 4. This is (Steer=0, Gas=1, Brake=0)
@@ -209,11 +217,19 @@ class DQNAgent:
                 self.epsilon -= self.epsilon_decay
 
             rewards_per_episode.append(episode_reward)
+            self.rewards_per_episode = rewards_per_episode  # Save for checkpointing
+
             print(f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {self.epsilon:.3f}")
 
-            # Save model after each episode
-            if save_path:
-                self.save(save_path)
+            # Save best model
+            if episode_reward > best_reward:
+                best_reward = episode_reward
+                if save_path:
+                    self.save(save_path, extra_data={'best_reward': best_reward, 'episode': episode + 1})
+
+            # (Opcjonalnie) Save after each episode
+            # if save_path:
+            #     self.save(save_path)
 
         env.close()
 
@@ -296,8 +312,8 @@ if __name__ == "__main__":
             if args.mode == 'test':
                 agent.epsilon = 0.01
                 agent.epsilon_min = 0.01
-
-                # Reduce number of episodes for testing
+                agent.policy_net.eval()  # Set to eval mode for inference
+                agent.target_net.eval()
                 agent.episodes = 30
         except FileNotFoundError as e:
             print(f"Error: {e}")
