@@ -1,25 +1,12 @@
-import random
-import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from collections import deque
-from gymnasium.wrappers import FrameStackObservation, ResizeObservation, GrayscaleObservation, NormalizeObservation
 import matplotlib.pyplot as plt
 import os
-import datetime
 
-from DQNAgent import DiscreteActionWrapper
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-CUSTOM_ACTIONS = [
-    (-1, 1, 0.2), (0, 1, 0.2), (1, 1, 0.2),  # Steer, Full Gas, Light Brake
-    (-1, 1,   0), (0, 1,   0), (1, 1,   0),  # Steer, Full Gas, No Brake  (Action 4 is (0,1,0) - straight, gas)
-    (-1, 0, 0.2), (0, 0, 0.2), (1, 0, 0.2),  # Steer, No Gas, Light Brake
-    (-1, 0,   0), (0, 0,   0), (1, 0,   0)   # Steer, No Gas, No Brake
-]
 
 class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim):
@@ -282,110 +269,3 @@ class PPOAgent:
         self.episodes = checkpoint.get('episodes', self.episodes)
         print(f"Model loaded from {load_path}")
 
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description='Train or test a PPO agent for Car Racing')
-    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test'],
-                        help='Mode: train or test')
-    parser.add_argument('--render', action='store_true', default=False,
-                        help='Render the environment')
-    parser.add_argument('--load_model', action='store_true', default=False, 
-                        help='Signal intent to load a model (requires --model_path for specification)')
-    parser.add_argument('--model_path', type=str, default=None,
-                        help='Path to a specific model file to load (for testing or resuming training)')
-    args = parser.parse_args()
-
-    print(f"Using device: {device}")
-
-    render_mode = "human" if args.render else "rgb_array"
-    env = gym.make("CarRacing-v3", render_mode=render_mode, continuous=True)
-
-    if render_mode != "human":
-        env = gym.wrappers.RecordVideo(
-            env,
-            video_folder="videos/",
-            # Popraw - użyj zwykłego licznika epizodów z RecordVideo
-            episode_trigger=lambda ep: ep % 5 == 0,  # Nagrywaj 0, 5, 10, ...
-            name_prefix="rl-video",
-            disable_logger=True
-        )
-    env = DiscreteActionWrapper(env, CUSTOM_ACTIONS)
-    image_size = 84
-    frame_stack_size = 4
-    env = ResizeObservation(env, (image_size, image_size))
-    env = GrayscaleObservation(env)
-    env = NormalizeObservation(env)
-    env = FrameStackObservation(env, frame_stack_size)
-
-    agent = PPOAgent(env, image_size, frame_stack_size)
-
-    # --- Model Save/Load Path Logic ---
-    model_loaded_successfully = False
-    # load_path_to_use will store the path from which a model was actually loaded or attempted to load.
-    # This is important for messages and for the test mode to know which model it's using.
-    path_model_was_loaded_from = None 
-
-    if args.model_path:
-        # User specified a path. Let's see if they also want to load it.
-        if args.load_model:
-            print(f"Attempting to load model from specified --model_path: {args.model_path}")
-            try:
-                agent.load(args.model_path)
-                model_loaded_successfully = True
-                path_model_was_loaded_from = args.model_path
-                print(f"Model successfully loaded from {args.model_path}")
-            except FileNotFoundError:
-                print(f"Error: Model file not found at --model_path: {args.model_path}")
-                if args.mode == 'test': 
-                    print("Exiting because model could not be loaded in test mode.")
-                    exit(1)
-                print("Proceeding with a new model for training.")
-            except Exception as e:
-                print(f"An unexpected error occurred while loading from --model_path: {args.model_path}. Error: {e}")
-                if args.mode == 'test': 
-                    print("Exiting due to an unexpected error during model loading in test mode.")
-                    exit(1)
-                print("Proceeding with a new model for training.")
-        else:
-            # --model_path given, but --load_model is false.
-            if args.mode == 'test':
-                print("Error: --model_path provided for test mode, but --load_model is false. A model must be loaded for testing.")
-                print("Please use --load_model along with --model_path to test a specific model.")
-                exit(1)
-
-            print(f"Warning: --model_path '{args.model_path}' provided, but --load_model is false. This path will not be used for loading. New training run will save to a new unique path.")
-
-    elif args.load_model: # --load_model is true, but --model_path is NOT given
-        print("Error: --load_model was specified, but no --model_path was provided to identify which model to load.")
-        if args.mode == 'test':
-            print("For test mode, please provide the model path using --model_path.")
-            exit(1)
-        else: # train mode
-            print("For resuming training, please provide the model path using --model_path. Starting new training.")
-            # model_loaded_successfully remains False
-
-    # --- Execution Logic ---
-    print(f"Env name: {env.__class__.__name__}")
-    print(f"Mode: {args.mode}")
-
-    if args.mode == 'train':
-        current_run_save_dir_name = 'run-{date:%Y-%m-%d_%H-%M-%S}'.format(date=datetime.datetime.now())
-        training_checkpoint_save_dir = os.path.join('saved_models', 'car_racing', agent.name, current_run_save_dir_name)
-        training_checkpoint_file_path = os.path.join(training_checkpoint_save_dir, 'model.pt')
-        
-        if model_loaded_successfully:
-            print(f"Resuming training from model: {path_model_was_loaded_from}")
-        else:
-            print("Starting fresh training.")
-        print(f"Checkpoints for this training session will be saved to: {training_checkpoint_file_path}")
-        
-        agent.train(checkpoint_save_path=training_checkpoint_file_path)
-    else:  # mode == 'test'
-        if not model_loaded_successfully:
-            print("Error: Test mode requires a model to be successfully loaded.")
-            print("Please use --load_model and specify the model file with --model_path.")
-            exit(1)
-        # path_model_was_loaded_from should have been set if model_loaded_successfully is true
-        print(f"Starting testing with model loaded from: {path_model_was_loaded_from}")
-        agent.test(episodes=10)
