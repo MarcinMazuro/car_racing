@@ -140,7 +140,7 @@ class DQNAgent:
         print(f"Starting training. Checkpoints will be saved to: {checkpoint_save_path}")
 
         for episode in range(self.episodes):
-            state,_ = self.env.reset(seed=1, options={"randomize": False}) # Set seed for consistent map
+            state,_ = self.env.reset() # Set seed for consistent map
             episode_reward = 0
             skip_learn = 4 #co ile krokow uczymy model
             done = False
@@ -192,6 +192,8 @@ class DQNAgent:
             rewards_per_episode.append(episode_reward)
             self.rewards_per_episode = rewards_per_episode  # Save for checkpointing
 
+            with open("rewards_dqn.txt", "a") as f:
+                f.write(f"{episode_reward}\n")
             print(f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {self.epsilon:.3f}")
 
             # Save best model

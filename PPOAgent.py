@@ -151,6 +151,7 @@ class PPOAgent:
         truncated = False
         rewards_per_episode = []
         gas_action_index = 4
+        single_episode_rewards = []
         while steps < max_steps:
             value = self.policy(torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(self.device))[1].item()
             action, prob = self.select_action(state, deterministic=deterministic)
@@ -171,16 +172,17 @@ class PPOAgent:
             steps += 1
             if done:
                 rewards_per_episode.append(episode_reward)
+                single_episode_rewards.append(episode_reward)
                 self.episode_counter += 1 
                 state, _ = self.env.reset()
                 episode_reward = 0
                 consecutive_no_positive_reward = 0
                 truncated = False
-        return rewards_per_episode
+        return single_episode_rewards
 
     def train(self, checkpoint_save_path):
         all_rewards = []
-        rewards_file = os.path.join("rewards.txt")
+        rewards_file = os.path.join("rewards_ppo.txt")
         
         # Ensure the directory for the checkpoint_save_path exists
         os.makedirs(os.path.dirname(checkpoint_save_path), exist_ok=True)
@@ -198,10 +200,12 @@ class PPOAgent:
                 continue
 
             self.learn() # Update policy
+            with open(rewards_file, "a") as f:
+                for ep_reward in rewards_in_rollout:
+                    f.write(f"{ep_reward}\n")
 
             current_ppo_iter_reward_sum = np.sum(rewards_in_rollout) if rewards_in_rollout else 0.0
-            with open(rewards_file, "a") as f:
-                f.write(f"{current_ppo_iter_reward_sum}\\n")
+
             print(f"PPO Iteration {ppo_iter_idx + 1}/{self.episodes}: Reward Sum for this iteration = {current_ppo_iter_reward_sum:.2f}, Num Env Episodes in Rollout = {len(rewards_in_rollout)}")
 
             # Save model every 20 PPO iterations
