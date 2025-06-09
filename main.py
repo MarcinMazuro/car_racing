@@ -50,8 +50,8 @@ if render_mode != "human":
     env = gym.wrappers.RecordVideo(
         env,
         video_folder="videos/",
-        # Popraw - użyj zwykłego licznika epizodów z RecordVideo
-        episode_trigger=lambda ep: ep % 5 == 0,  # Nagrywaj 0, 5, 10, ...
+        # Use a simple episode counter from RecordVideo
+        episode_trigger=lambda ep: ep % 5 == 0,  # Record 0, 5, 10, ...
         name_prefix="rl-video",
         disable_logger=True
     )

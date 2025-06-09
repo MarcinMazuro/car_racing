@@ -32,29 +32,29 @@ class CNN(nn.Module):
 
 class DQNAgent:
     def __init__(self, env, image_size, frame_stack_size):
-        #hiperparametry
-        self.learning_rate = 0.00025 #tempo uczenia modelu
-        self.gamma = 0.99 #im wieksze tym bardziej dalekowzroczny model
-        self.epsilon = 1.0 #poczatkowa wartosc epsilon (eksploracja)
-        self.epsilon_min = 0.01#koniec eksploracji
-        self.epsilon_decay = 0.01 #spadek wartosci epsilon
-        self.batch_size = 64 #liczba doswiadczen do aktualizacji sieci
-        self.target_update_freq = 1000 #co ile krokow aktualizowac siec docelowa
-        self.memory_size = 10000 # rozmiar pamieci (liczba doswiadczen do przechowywania)
-        self.episodes = 1000 #ilosc epizodow (prob jazdy)
-        self.gas_reward_bonus = 0.1 # Dodatkowa nagroda za gazowanie
+        #hyperparameters
+        self.learning_rate = 0.00025 #model learning rate
+        self.gamma = 0.99 #the larger the more far-sighted the model
+        self.epsilon = 1.0 #initial value of epsilon (exploration)
+        self.epsilon_min = 0.01 #end of exploration
+        self.epsilon_decay = 0.01 #decrease in epsilon value
+        self.batch_size = 64 #number of experiences to update the network
+        self.target_update_freq = 1000 #how often to update the target network
+        self.memory_size = 10000 # memory size (number of experiences to store)
+        self.episodes = 1000 #number of episodes (driving attempts)
+        self.gas_reward_bonus = 0.1 # Additional reward for accelerating
         self.no_positive_reward_patience = 100 # Max consecutive steps without positive reward before truncating
         self.name = "dqn_agent" # Agent name for saving models
         self.env = env
 
-        self.n_actions = env.action_space.n #liczba mozliwych akcji do wykonaniwa (przyspiesz,hamuj, lewo, prawo, nic)
-        self.n_observation = frame_stack_size #liczba obserwacji (4 klatki obrazu)
-        self.policy_net = CNN(self.n_observation, self.n_actions).to(device) #siec uczaca sie ktora podejmuje decyzje
-        self.target_net = CNN(self.n_observation, self.n_actions).to(device) #siec pomocnicza, ktora jest aktualizowana co pewien czas dla stabilnosci
-        self.target_net.load_state_dict(self.policy_net.state_dict()) #kopiowanie wag z sieci uczacej do sieci docelowej
+        self.n_actions = env.action_space.n #number of possible actions to perform (accelerate, brake, left, right, nothing)
+        self.n_observation = frame_stack_size #number of observations (4 image frames)
+        self.policy_net = CNN(self.n_observation, self.n_actions).to(device) #learning network that makes decisions
+        self.target_net = CNN(self.n_observation, self.n_actions).to(device) #auxiliary network that is updated periodically for stability
+        self.target_net.load_state_dict(self.policy_net.state_dict()) #copying weights from the learning network to the target network
         self.target_net.eval()
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.learning_rate)
-        self.memory = deque(maxlen=self.memory_size) #przychowywanie doswiadczen
+        self.memory = deque(maxlen=self.memory_size) #storing experiences
 
 
     def select_action(self, state):
@@ -69,7 +69,7 @@ class DQNAgent:
         self.memory.append((np.array(state), action, reward, np.array(next_state), done))
 
     def numpy_to_tensor(self, batch):
-        states, actions, rewards, next_states, dones = zip(*batch)# element to transition(state, action, reward, next_state, done)
+        states, actions, rewards, next_states, dones = zip(*batch)# element is a transition (state, action, reward, next_state, done)
         states = torch.FloatTensor(np.array(states)).to(device)
         actions = torch.LongTensor(actions).unsqueeze(1).to(device)
         rewards = torch.FloatTensor(rewards).to(device)

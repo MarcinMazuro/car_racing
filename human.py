@@ -2,16 +2,16 @@ import gymnasium as gym
 import pygame
 import numpy as np
 
-# Inicjalizacja środowiska
+# Initialize the environment
 env = gym.make("CarRacing-v3", render_mode="human", domain_randomize = False)
 observation, info = env.reset()
 
-# Inicjalizacja pygame do obsługi klawiatury
+# Initialize pygame for keyboard handling
 pygame.init()
 screen = pygame.display
-pygame.display.set_caption("Sterowanie CarRacing")
+pygame.display.set_caption("CarRacing Control")
 
-# Mapowanie klawiszy na akcje
+# Key mapping to actions
 action = np.array([0.0, 0.0, 0.0])  # [steer, gas, brake]
 
 running = True
@@ -22,7 +22,7 @@ while running:
 
     keys = pygame.key.get_pressed()
 
-    # Reset akcji
+    # Reset actions
     steer = 0.0
     gas = 0.0
     brake = 0.0
@@ -39,14 +39,14 @@ while running:
 
     action = np.array([steer, gas, brake])
 
-    # Wykonaj akcję w środowisku
+    # Perform action in the environment
     observation, reward, terminated, truncated, info = env.step(action)
 
     if terminated or truncated:
-        print("Koniec epizodu. Restart...")
+        print("End of episode. Restarting...")
         observation, info = env.reset(options={"randomize": False})
 
-    # Mała przerwa dla stabilności pętli
+    # Small delay for loop stability
     pygame.time.wait(30)
 
 env.close()

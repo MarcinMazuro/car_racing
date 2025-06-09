@@ -16,10 +16,10 @@ class ActorCritic(nn.Module):
         self.in_features = 32 * 9 * 9
         self.fc1 = nn.Linear(self.in_features, 256)
 
-        # wyjscie aktora
+        # actor output
         self.actor = nn.Linear(256, action_dim)
 
-        #wyjscie krytyka
+        # critic output
         self.critic = nn.Linear(256, 1)
 
     def forward(self, x):
@@ -50,7 +50,7 @@ class PPOAgent:
         self.name = "ppo_agent"
         self.gas_reward_bonus = 0.1
         self.no_positive_reward_patience = 300
-        self.episode_counter = 0  # Dodaj licznik epizodów
+        self.episode_counter = 0
         self.value_loss_coef = 0.5
         self.entropy_coef = 0.01
 
@@ -142,7 +142,7 @@ class PPOAgent:
         self.memory = []
 
     def rollout(self, max_steps=2048, deterministic=False):
-        # Zresetuj środowisko na początku rolloutu
+        # Reset the environment at the start of the rollout
         state, _ = self.env.reset()
         done = False
         steps = 0
