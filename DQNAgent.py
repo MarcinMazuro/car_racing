@@ -58,12 +58,12 @@ class DQNAgent:
 
 
     def select_action(self, state):
-        if random.random() < self.epsilon:  #akcja losowa(eksploracja)
+        if random.random() < self.epsilon:  #random action(exploration)
             return random.randint(0, self.n_actions - 1)
         with torch.no_grad():
             state = state.to(device)
             q_values = self.policy_net(state)
-            return q_values.argmax(1).item()   #akcja najlepsza mozliwa
+            return q_values.argmax(1).item()   #best action(exploatation)
 
     def store_transition(self, state, action, reward, next_state, done):
         self.memory.append((np.array(state), action, reward, np.array(next_state), done))
@@ -88,7 +88,7 @@ class DQNAgent:
             'epsilon_min': self.epsilon_min,
             'epsilon_decay': self.epsilon_decay,
             'rewards_per_episode': getattr(self, 'rewards_per_episode', []),
-            # 'memory': list(self.memory),  # Uncomment if you want to save replay buffer (can be large!)
+            # 'memory': list(self.memory),  # Uncomment if you want to save replay buffer (can be large)
         }
         if extra_data:
             save_dict.update(extra_data)
@@ -114,19 +114,19 @@ class DQNAgent:
         if len(self.memory) < self.batch_size:
             return
 
-        batch = random.sample(self.memory, self.batch_size) #losujemy mini-batch z pamieci
-        states, actions, rewards, next_states, dones = self.numpy_to_tensor(batch) #konwersja transition do tensora
+        batch = random.sample(self.memory, self.batch_size) #selecting random mini-batch from memory
+        states, actions, rewards, next_states, dones = self.numpy_to_tensor(batch) 
 
-        q_values = self.policy_net(states).gather(1, actions) #przepuszczenie stanu przez siec uczaca i pobranie wartosci Q dla akcji podanej w batchu
+        q_values = self.policy_net(states).gather(1, actions) #getting q values from net 
 
         with torch.no_grad():
-            next_q_values = self.target_net(next_states).max(1)[0].unsqueeze(1)  #podajemy siec docelowa do przewidywania wartosci Q dla nastepnego stanu
-            expected_q_values = rewards.unsqueeze(1) + self.gamma * next_q_values * (1 - dones.unsqueeze(1)) #wzor bellmana
+            next_q_values = self.target_net(next_states).max(1)[0].unsqueeze(1)  #predicting next q values from target net
+            expected_q_values = rewards.unsqueeze(1) + self.gamma * next_q_values * (1 - dones.unsqueeze(1)) #bellman formula
 
-        loss = F.mse_loss(q_values, expected_q_values)  # 1.obliczenie błędu
-        self.optimizer.zero_grad()  # 2. zerowanie gradientów
-        loss.backward()  # 3. obliczanie gradientow
-        self.optimizer.step()  #aktualizacja wag sieci
+        loss = F.mse_loss(q_values, expected_q_values)  # calculating loss
+        self.optimizer.zero_grad() 
+        loss.backward()  #  gradient
+        self.optimizer.step()  
 
 
     def train(self, checkpoint_save_path):
@@ -142,13 +142,13 @@ class DQNAgent:
         for episode in range(self.episodes):
             state,_ = self.env.reset() # Set seed for consistent map
             episode_reward = 0
-            skip_learn = 4 #co ile krokow uczymy model
+            skip_learn = 4 #how many episodes we learn 
             done = False
             truncated = False # Initialize truncated flag
             consecutive_no_positive_reward = 0 # Counter for steps without positive reward
 
             while not done:
-                state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device) #konwersja stanu do tensora
+                state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device) 
                 action = self.select_action(state_tensor)#wybor akcji
 
                 next_state, reward, terminated, truncated_env, _ = self.env.step(action)#wykonanie akcji
@@ -156,7 +156,7 @@ class DQNAgent:
                 # We use our own `truncated` for early stopping logic.
 
                 # Add bonus reward for using gas
-                if action == gas_action_index: # Assuming action 3 is 'gas'
+                if action == gas_action_index: 
                     reward += self.gas_reward_bonus
 
                 # Check for positive reward
@@ -174,19 +174,19 @@ class DQNAgent:
                     truncated = True # Set our custom truncation flag
                     done = True # End the episode
 
-                self.store_transition(state, action, reward, next_state, done) #zapisanie doswiadczenia do pamieci
+                self.store_transition(state, action, reward, next_state, done) #save memory to buffer
 
                 state = next_state
                 episode_reward += reward
-                if steps_done % skip_learn == 0: # co x krokow uczymy model, dla szybkosci
+                if steps_done % skip_learn == 0: #learn noly every x episode 
                     self.learn()
 
-                if steps_done % self.target_update_freq == 0: # aktualizujemy siec docelowa
+                if steps_done % self.target_update_freq == 0: # update target net
                     self.target_net.load_state_dict(self.policy_net.state_dict())
 
                 steps_done += 1
 
-            if self.epsilon > self.epsilon_min: # zmniejszamy wartosc epsilon
+            if self.epsilon > self.epsilon_min: # decrease epsilon
                 self.epsilon -= self.epsilon_decay
 
             rewards_per_episode.append(episode_reward)
@@ -202,9 +202,6 @@ class DQNAgent:
                 if checkpoint_save_path:
                     self.save(checkpoint_save_path, extra_data={'best_reward': best_reward, 'episode': episode + 1})
 
-            # (Opcjonalnie) Save after each episode
-            # if save_path:
-            #     self.save(save_path)
 
         self.env.close()
 
