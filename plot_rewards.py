@@ -1,33 +1,40 @@
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 
-# Read data from the file
-file_path = "c:\\Nauka\\projekty\\car_racing\\rewards.txt"
-with open(file_path, 'r') as file:
-    rewards = [float(line.strip()) for line in file if line.strip() and not line.strip().startswith('//')]
+# Funkcja do wczytywania nagród z pliku
+def load_rewards(path):
+    with open(path) as f:
+        return [float(line.strip()) for line in f if line.strip()]
 
-# Convert to numpy array and create index array
-rewards = np.array(rewards)
-# Divide all rewards by 2
-rewards = rewards / 2
-indices = np.arange(len(rewards))
+# Funkcja do obliczania średniej kroczącej
+def moving_average(data, window_size=20):
+    return [sum(data[max(0, i - window_size + 1):i + 1]) / (i - max(0, i - window_size + 1) + 1) for i in range(len(data))]
 
-# Calculate moving average (window size can be adjusted)
-window_size = 20
-moving_avg = pd.Series(rewards).rolling(window=window_size).mean().to_numpy()
+# Wczytaj dane
+ppo_rewards = load_rewards('rewards_ppo.txt')
+dqn_rewards = load_rewards('rewards_dqn.txt')
 
-# Create the plot
+# Oblicz średnie i minima
+ppo_mean = sum(ppo_rewards) / len(ppo_rewards)
+ppo_max = max(ppo_rewards)
+dqn_mean = sum(dqn_rewards) / len(dqn_rewards)
+dqn_max = max(dqn_rewards)
+
+# Oblicz średnie kroczące
+ppo_ma = moving_average(ppo_rewards, window_size=20)
+dqn_ma = moving_average(dqn_rewards, window_size=20)
+
+# Wyświetl statystyki
+print(f"PPO - Średnia: {ppo_mean:.2f}, Max: {ppo_max:.2f}")
+print(f"DQN - Średnia: {dqn_mean:.2f}, Max: {dqn_max:.2f}")
+
+# Wykres
 plt.figure(figsize=(12, 6))
-plt.plot(indices, rewards, '-', alpha=0.5)
-plt.plot(indices, moving_avg, 'r-', linewidth=2, label=f'Moving average (window={window_size})')
-plt.xlabel('Episode')
-plt.ylabel('Reward')
-plt.title('Training progress')
-plt.legend()
+plt.plot(ppo_ma, label=f'PPO (moving average 20) Średnia: {ppo_mean:.2f}, Max: {ppo_max:.2f}', color='blue')
+plt.plot(dqn_ma, label=f'DQN (moving average 20) Średnia: {dqn_mean:.2f}, Max: {dqn_max:.2f}', color='green')
+plt.title("Train: PPO vs DQN")
+plt.xlabel("Episode")
+plt.ylabel("Reward")
 plt.grid(True)
+plt.legend()
 plt.tight_layout()
-
-# Save the plot
-plt.savefig("c:\\Nauka\\projekty\\car_racing\\rewards_plot.png")
 plt.show()

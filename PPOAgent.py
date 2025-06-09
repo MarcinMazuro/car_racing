@@ -238,6 +238,9 @@ class PPOAgent:
                 episode_reward += reward
             rewards_per_episode.append(episode_reward)
             print(f"Test Episode {ep+1}: Reward = {episode_reward:.2f}")
+            with open("rewards_ppo.txt", "a") as f:
+                f.write(f"{episode_reward}\n")
+
         self.env.close()
         plt.plot(rewards_per_episode)
         plt.xlabel("Test Episode")

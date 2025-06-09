@@ -136,4 +136,4 @@ else:  # mode == 'test'
         exit(1)
     # path_model_was_loaded_from should have been set if model_loaded_successfully is true
     print(f"Starting testing with model loaded from: {path_model_was_loaded_from}")
-    agent.test(episodes=10)
+    agent.test(episodes=30)

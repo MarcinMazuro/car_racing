@@ -233,6 +233,9 @@ class DQNAgent:
                 episode_reward += reward
             rewards_per_episode.append(episode_reward)
             print(f"Test Episode {ep+1}: Reward = {episode_reward:.2f}")
+            with open("rewards_dqn.txt", "a") as f:
+                f.write(f"{episode_reward}\n")
+            print(f"Episode {ep + 1}: Reward = {episode_reward:.2f}, Epsilon = {self.epsilon:.3f}")
         self.env.close()
         plt.plot(rewards_per_episode)
         plt.xlabel("Test Episode")
