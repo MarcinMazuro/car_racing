@@ -192,7 +192,7 @@ Although the number of training episodes was 350, each was accompanied by additi
     
 ![](images/image1.png)
 
-![](images/image20.png)
+![](images/image21.png)
 
 Both applied algorithms — DQN (Deep Q-Network) and PPO (Proximal Policy Optimization) — yielded results allowing for the solution of the set task, yet they demonstrated distinct differences in performance.
 
